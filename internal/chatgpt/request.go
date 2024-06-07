@@ -6,10 +6,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"freechatgpt/internal/proxys"
 	"freechatgpt/internal/tokens"
 	"freechatgpt/typings"
 	chatgpt_types "freechatgpt/typings/chatgpt"
+	"freechatgpt/util"
 	"io"
+	"log"
 	"math/rand"
 	"net/url"
 	"os"
@@ -39,14 +42,19 @@ var (
 	API_REVERSE_PROXY   = os.Getenv("API_REVERSE_PROXY")
 	FILES_REVERSE_PROXY = os.Getenv("FILES_REVERSE_PROXY")
 	userAgent           = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-	startTime           = time.Now()
+	performanceNow      = time.Now()
 	timeLocation, _     = time.LoadLocation("Asia/Shanghai")
 	timeLayout          = "Mon Jan 2 2006 15:04:05"
 	cachedHardware      = 0
 	cachedSid           = uuid.NewString()
 	cachedScripts       = []string{}
 	cachedDpl           = ""
+	RetryTimes          = 0
+	navigatorFuc        = []string{"vendorSub−", "productSub−20030107", "vendor−Google Inc.", "maxTouchPoints−0", "scheduling−[object Scheduling]", "userActivation−[object UserActivation]", "doNotTrack−undefined", "geolocation−[object Geolocation]", "connection−[object NetworkInformation]", "plugins−[object PluginArray]", "mimeTypes−[object MimeTypeArray]", "pdfViewerEnabled−true", "webkitTemporaryStorage−[object DeprecatedStorageQuota]", "webkitPersistentStorage−[object DeprecatedStorageQuota]", "hardwareConcurrency−2", "cookieEnabled−true", "appCodeName−Mozilla", "appName−Netscape", "language−en-US", "languages−en-US", "onLine−true", "webdriver−false", "getGamepads−function getGamepads() { [native code] }", "javaEnabled−function javaEnabled() { [native code] }", "sendBeacon−function sendBeacon() { [native code] }", "vibrate−function vibrate() { [native code] }", "bluetooth−[object Bluetooth]", "clipboard−[object Clipboard]", "credentials−[object CredentialsContainer]", "keyboard−[object Keyboard]", "managed−[object NavigatorManagedData]", "mediaDevices−[object MediaDevices]", "storage−[object StorageManager]", "serviceWorker−[object ServiceWorkerContainer]", "virtualKeyboard−[object VirtualKeyboard]", "wakeLock−[object WakeLock]", "deviceMemory−8", "ink−[object Ink]", "hid−[object HID]", "locks−[object LockManager]", "mediaCapabilities−[object MediaCapabilities]", "mediaSession−[object MediaSession]", "permissions−[object Permissions]", "presentation−[object Presentation]", "serial−[object Serial]", "usb−[object USB]", "windowControlsOverlay−[object WindowControlsOverlay]", "xr−[object XRSystem]", "userAgentData−[object NavigatorUAData]", "canShare−function canShare() { [native code] }", "share−function share() { [native code] }", "clearAppBadge−function clearAppBadge() { [native code] }", "getBattery−function getBattery() { [native code] }", "getUserMedia−function getUserMedia() { [native code] }", "requestMIDIAccess−function requestMIDIAccess() { [native code] }", "requestMediaKeySystemAccess−function requestMediaKeySystemAccess() { [native code] }", "setAppBadge−function setAppBadge() { [native code] }", "webkitGetUserMedia−function webkitGetUserMedia() { [native code] }", "getInstalledRelatedApps−function getInstalledRelatedApps() { [native code] }", "registerProtocolHandler−function registerProtocolHandler() { [native code] }", "unregisterProtocolHandler−function unregisterProtocolHandler() { [native code] }"}
+	windowParam         = []string{"0", "window", "self", "document", "name", "location", "customElements", "history", "navigation", "locationbar", "menubar", "personalbar", "scrollbars", "statusbar", "toolbar", "status", "closed", "frames", "length", "top", "opener", "parent", "frameElement", "navigator", "origin", "external", "screen", "innerWidth", "innerHeight", "scrollX", "pageXOffset", "scrollY", "pageYOffset", "visualViewport", "screenX", "screenY", "outerWidth", "outerHeight", "devicePixelRatio", "clientInformation", "screenLeft", "screenTop", "styleMedia", "onsearch", "isSecureContext", "trustedTypes", "performance", "onappinstalled", "onbeforeinstallprompt", "crypto", "indexedDB", "sessionStorage", "localStorage", "onbeforexrselect", "onabort", "onbeforeinput", "onblur", "oncancel", "oncanplay", "oncanplaythrough", "onchange", "onclick", "onclose", "oncontextlost", "oncontextmenu", "oncontextrestored", "oncuechange", "ondblclick", "ondrag", "ondragend", "ondragenter", "ondragleave", "ondragover", "ondragstart", "ondrop", "ondurationchange", "onemptied", "onended", "onerror", "onfocus", "onformdata", "oninput", "oninvalid", "onkeydown", "onkeypress", "onkeyup", "onload", "onloadeddata", "onloadedmetadata", "onloadstart", "onmousedown", "onmouseenter", "onmouseleave", "onmousemove", "onmouseout", "onmouseover", "onmouseup", "onmousewheel", "onpause", "onplay", "onplaying", "onprogress", "onratechange", "onreset", "onresize", "onscroll", "onsecuritypolicyviolation", "onseeked", "onseeking", "onselect", "onslotchange", "onstalled", "onsubmit", "onsuspend", "ontimeupdate", "ontoggle", "onvolumechange", "onwaiting", "onwebkitanimationend", "onwebkitanimationiteration", "onwebkitanimationstart", "onwebkittransitionend", "onwheel", "onauxclick", "ongotpointercapture", "onlostpointercapture", "onpointerdown", "onpointermove", "onpointerrawupdate", "onpointerup", "onpointercancel", "onpointerover", "onpointerout", "onpointerenter", "onpointerleave", "onselectstart", "onselectionchange", "onanimationend", "onanimationiteration", "onanimationstart", "ontransitionrun", "ontransitionstart", "ontransitionend", "ontransitioncancel", "onafterprint", "onbeforeprint", "onbeforeunload", "onhashchange", "onlanguagechange", "onmessage", "onmessageerror", "onoffline", "ononline", "onpagehide", "onpageshow", "onpopstate", "onrejectionhandled", "onstorage", "onunhandledrejection", "onunload", "crossOriginIsolated", "scheduler", "alert", "atob", "blur", "btoa", "cancelAnimationFrame", "cancelIdleCallback", "captureEvents", "clearInterval", "clearTimeout", "close", "confirm", "createImageBitmap", "fetch", "find", "focus", "getComputedStyle", "getSelection", "matchMedia", "moveBy", "moveTo", "open", "postMessage", "print", "prompt", "queueMicrotask", "releaseEvents", "reportError", "requestAnimationFrame", "requestIdleCallback", "resizeBy", "resizeTo", "scroll", "scrollBy", "scrollTo", "setInterval", "setTimeout", "stop", "structuredClone", "webkitCancelAnimationFrame", "webkitRequestAnimationFrame", "chrome", "credentialless", "caches", "cookieStore", "ondevicemotion", "ondeviceorientation", "ondeviceorientationabsolute", "launchQueue", "onbeforematch", "getScreenDetails", "queryLocalFonts", "showDirectoryPicker", "showOpenFilePicker", "showSaveFilePicker", "originAgentCluster", "speechSynthesis", "oncontentvisibilityautostatechange", "openDatabase", "webkitRequestFileSystem", "webkitResolveLocalFileSystemURL", "webpackChunk_N_E", "__next_set_public_path__", "next", "__NEXT_DATA__", "__SSG_MANIFEST_CB", "__NEXT_P", "_N_E", "DD_RUM", "regeneratorRuntime", "__REACT_INTL_CONTEXT__", "_", "filterCSS", "filterXSS", "__SEGMENT_INSPECTOR__", "__NEXT_PRELOADREADY", "Intercom", "__MIDDLEWARE_MATCHERS", "__BUILD_MANIFEST", "__SSG_MANIFEST", "__STATSIG_SDK__", "__STATSIG_JS_SDK__", "__STATSIG_RERENDER_OVERRIDE__", "_oaiHandleSessionExpired", "__intercomAssignLocation", "__intercomReloadLocation"}
+	documentParam       = []string{"location", "_reactListeningzfarkvlqj1k"}
 	cachedRequireProof  = ""
+	requirementsSeed    = strconv.FormatFloat(rand.Float64(), 'f', -1, 64)
 )
 
 func init() {
@@ -57,6 +65,13 @@ func init() {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 	screen := screens[rand.Intn(3)]
 	cachedHardware = core + screen
+
+	retryTimetxt := os.Getenv("RETRY_TIME")
+	if retryTimetxt == "" {
+		RetryTimes = 2
+	} else {
+		RetryTimes, _ = strconv.Atoi(retryTimetxt)
+	}
 
 	envClientProfileStr := os.Getenv("CLIENT_PROFILE")
 	var clientProfile profiles.ClientProfile
@@ -81,6 +96,8 @@ func newRequest(method string, url string, body io.Reader, secret *tokens.Secret
 	if err != nil {
 		return &http.Request{}, err
 	}
+	request.Header.Set("Connection", "close")
+	request.Header.Set("Proxy-Connection", "close")
 	request.Header.Set("User-Agent", userAgent)
 	request.Header.Set("Accept", "*/*")
 	request.Header.Set("Oai-Device-Id", deviceId)
@@ -104,6 +121,9 @@ func SetOAICookie(uuid string) {
 	}, {
 		Name:  "oai-dm-tgt-c-240329",
 		Value: "2024-04-02",
+	}, {
+		Name:  "oai-hlib",
+		Value: "true",
 	}})
 }
 
@@ -118,15 +138,19 @@ func getParseTime() string {
 	now = now.In(timeLocation)
 	return now.Format(timeLayout) + " GMT+0800 (中国标准时间)"
 }
-func GetDpl(proxy string) {
-	if len(cachedScripts) > 0 {
-		return
+func InitScriptDpl() {
+	for {
+		log.Println("获取最新Script脚本")
+		getDpl()
+		log.Printf("获取完成, 当前文件数: %d", len(cachedScripts))
+		time.Sleep(3 * time.Hour)
 	}
+}
+func getDpl() {
+	proxy := proxys.GetProxyIP()
 	if proxy != "" {
 		client.SetProxy(proxy)
 	}
-	cachedScripts = append(cachedScripts, "https://cdn.oaistatic.com/_next/static/chunks/9598-0150caea9526d55d.js?dpl=abad631f183104e6c8a323392d7bc30b933c5c7c")
-	cachedDpl = "dpl=abad631f183104e6c8a323392d7bc30b933c5c7c"
 	request, err := http.NewRequest(http.MethodGet, "https://chatgpt.com/?oai-dm=1", nil)
 	request.Header.Set("User-Agent", userAgent)
 	request.Header.Set("Accept", "*/*")
@@ -139,12 +163,12 @@ func GetDpl(proxy string) {
 	}
 	defer response.Body.Close()
 	doc, _ := goquery.NewDocumentFromReader(response.Body)
-	scripts := []string{}
+	cachedScripts = make([]string, 0)
 	inited := false
 	doc.Find("script[src]").Each(func(i int, s *goquery.Selection) {
 		src, exists := s.Attr("src")
 		if exists {
-			scripts = append(scripts, src)
+			cachedScripts = append(cachedScripts, src)
 			if !inited {
 				idx := strings.Index(src, "dpl")
 				if idx >= 0 {
@@ -154,28 +178,43 @@ func GetDpl(proxy string) {
 			}
 		}
 	})
-	if len(scripts) != 0 {
-		cachedScripts = scripts
-	}
 }
 func getConfig() []interface{} {
+	var script string
+	if len(cachedScripts) == 0 {
+		script = "https://cdn.oaistatic.com/_next/static/chunks/polyfills-78c92fac7aa8fdd8.js?dpl=33ba01fcc2056925ff4a17016b4fa07d781e2db8"
+	} else {
+		script = cachedScripts[rand.Intn(len(cachedScripts))]
+	}
+	if cachedDpl == "" {
+		cachedDpl = "dpl=33ba01fcc2056925ff4a17016b4fa07d781e2db8"
+	}
 	rand.New(rand.NewSource(time.Now().UnixNano()))
-	script := cachedScripts[rand.Intn(len(cachedScripts))]
-	timeNum := (float64(time.Since(startTime).Nanoseconds()) + rand.Float64()) / 1e6
-	return []interface{}{cachedHardware, getParseTime(), int64(4294705152), 0, userAgent, script, cachedDpl, "zh-CN", "zh-CN", 0, "webkitGetUserMedia−function webkitGetUserMedia() { [native code] }", "location", "ontransitionend", timeNum, cachedSid}
+	navigator := navigatorFuc[rand.Intn(len(navigatorFuc))]
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	document := documentParam[rand.Intn(len(documentParam))]
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	window := windowParam[rand.Intn(len(windowParam))]
+	rand.New(rand.NewSource(time.Now().UnixNano()))
+	uuid := uuid.New()
+	timeNum := (float64(time.Since(performanceNow).Nanoseconds()) + rand.Float64()) / 1e6
+	return []interface{}{cachedHardware, getParseTime(), int64(2172649472), 0, userAgent, script, cachedDpl,
+		"en-US", "en-US", 0, navigator, document, window, timeNum, uuid}
 }
-func CalcProofToken(require *ChatRequire, proxy string) string {
-	proof := generateAnswer(require.Proof.Seed, require.Proof.Difficulty, proxy)
-	return "gAAAAAB" + proof
-}
+func CalcProofToken(prefix string, seed string, diff string) string {
+	token, err := util.RedisHashGet("ProofToken", seed)
+	if token != "" && err == nil {
+		return prefix + token
+	}
 
-func generateAnswer(seed string, diff string, proxy string) string {
-	GetDpl(proxy)
 	config := getConfig()
 	diffLen := len(diff)
 	hasher := sha3.New512()
+	calcTime := time.Now()
 	for i := 0; i < 500000; i++ {
 		config[3] = i
+		// spend := (float64(time.Since(performanceNow).Nanoseconds()) + rand.Float64()) / 1e6
+		// config[9] = math.Round(float64(spend))
 		config[9] = (i + 2) / 2
 		json, _ := json.Marshal(config)
 		base := base64.StdEncoding.EncodeToString(json)
@@ -183,10 +222,23 @@ func generateAnswer(seed string, diff string, proxy string) string {
 		hash := hasher.Sum(nil)
 		hasher.Reset()
 		if hex.EncodeToString(hash[:diffLen])[:diffLen] <= diff {
-			return base
+			cost := time.Since(calcTime)
+			if cost > time.Second*5 {
+				log.Printf("Slowly CalcProofToken: seed: %s, diff: %s, round: %d, time: %d", seed, diff, i, cost*time.Second)
+			}
+			token = base
+			break
 		}
 	}
-	return "wQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D" + base64.StdEncoding.EncodeToString([]byte(`"`+seed+`"`))
+	if token == "" {
+		log.Printf("ProofToken计算失败, Seed: %s, Difficulty: %s", seed, diff)
+		token = "wQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D" + base64.StdEncoding.EncodeToString([]byte(`"`+seed+`"`))
+	} else {
+		if ok, _ := util.RedisHExists("ProofToken", seed); !ok {
+			util.RedisHashSet("ProofToken", seed, token, 60*60*24)
+		}
+	}
+	return prefix + token
 }
 
 type ChatRequire struct {
@@ -204,7 +256,7 @@ func CheckRequire(secret *tokens.Secret, deviceId string, proxy string) *ChatReq
 		client.SetProxy(proxy)
 	}
 	if cachedRequireProof == "" {
-		cachedRequireProof = "gAAAAAC" + generateAnswer(strconv.FormatFloat(rand.Float64(), 'f', -1, 64), "0", proxy)
+		cachedRequireProof = CalcProofToken("gAAAAAC", requirementsSeed, "0")
 	}
 	body := bytes.NewBuffer([]byte(`{"p":"` + cachedRequireProof + `"}`))
 	var apiUrl string
@@ -213,19 +265,44 @@ func CheckRequire(secret *tokens.Secret, deviceId string, proxy string) *ChatReq
 	} else {
 		apiUrl = "https://chatgpt.com/backend-api/sentinel/chat-requirements"
 	}
-	request, err := newRequest(http.MethodPost, apiUrl, body, secret, deviceId)
-	if err != nil {
-		return nil
+
+	var response *http.Response
+	for i := 0; i < 10; i++ {
+		request, err := newRequest(http.MethodPost, apiUrl, body, secret, deviceId)
+		if err != nil {
+			return nil
+		}
+		request.Header.Set("Content-Type", "application/json")
+		response, err = client.Do(request)
+		if err != nil {
+			return nil
+		}
+		if response != nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden ||
+			response.StatusCode == http.StatusGatewayTimeout || response.StatusCode == http.StatusServiceUnavailable ||
+			response.StatusCode == http.StatusInternalServerError) {
+			//关闭当前资源
+			response.Body.Close()
+		} else {
+			break
+		}
 	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := client.Do(request)
-	if err != nil {
-		return nil
-	}
-	defer response.Body.Close()
 	var require ChatRequire
-	err = json.NewDecoder(response.Body).Decode(&require)
+	var error_response map[string]interface{}
+	defer response.Body.Close()
+	bodyByte, err := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK {
+		log.Printf("check-requirement失败: %s:%s", response.Status, string(bodyByte))
+	}
 	if err != nil {
+		return nil
+	}
+	err = json.Unmarshal(bodyByte, &require)
+	if err != nil {
+		err = json.Unmarshal(bodyByte, &error_response)
+		if err != nil {
+			return nil
+		}
+		log.Printf("check-requirement失败原因: %s:%v", response.Status, error_response)
 		return nil
 	}
 	if require.ForceLogin {
@@ -261,6 +338,16 @@ func getURLAttribution(secret *tokens.Secret, deviceId string, url string) strin
 		return ""
 	}
 	return attr.Attribution
+}
+
+func IsRetryError(err string) bool {
+	if strings.Contains(err, "EOF") {
+		return true
+	}
+	if strings.Contains(err, "connection reset by peer") {
+		return true
+	}
+	return false
 }
 
 func POSTconversation(message chatgpt_types.ChatGPTRequest, secret *tokens.Secret, deviceId string, chat_token string, arkoseToken string, proofToken string, proxy string) (*http.Response, error) {
@@ -306,20 +393,21 @@ func POSTconversation(message chatgpt_types.ChatGPTRequest, secret *tokens.Secre
 }
 
 // Returns whether an error was handled
-func Handle_request_error(c *gin.Context, response *http.Response) bool {
+func Handle_request_error(c *gin.Context, response *http.Response, bodyBytes []byte) bool {
 	if response.StatusCode != 200 {
 		// Try read response body as JSON
 		var error_response map[string]interface{}
-		err := json.NewDecoder(response.Body).Decode(&error_response)
+		err := json.Unmarshal(bodyBytes, &error_response)
 		if err != nil {
-			// Read response body
-			body, _ := io.ReadAll(response.Body)
+			msg := "Unknown error"
+			if error_response != nil && error_response["detail"] != "" {
+				msg = error_response["detail"].(string)
+			}
 			c.JSON(500, gin.H{"error": gin.H{
-				"message": "Unknown error",
+				"message": msg,
 				"type":    "internal_server_error",
 				"param":   nil,
 				"code":    "500",
-				"details": string(body),
 			}})
 			return true
 		}
@@ -363,14 +451,14 @@ func GetImageSource(wg *sync.WaitGroup, url string, prompt string, secret *token
 	imgSource[idx] = "[![image](" + file_info.DownloadURL + " \"" + prompt + "\")](" + file_info.DownloadURL + ")"
 }
 
-func Handler(c *gin.Context, response *http.Response, secret *tokens.Secret, proxy string, deviceId string, uuid string, stream bool) (string, *ContinueInfo) {
+func Handler(c *gin.Context, response *http.Response, secret *tokens.Secret, proxy string, deviceId string, uuid string, original_request official_types.APIRequest) (string, *ContinueInfo) {
 	max_tokens := false
 
 	// Create a bufio.Reader from the response body
 	reader := bufio.NewReader(response.Body)
 
 	// Read the response byte by byte until a newline character is encountered
-	if stream {
+	if original_request.Stream {
 		// Response content type is text/event-stream
 		c.Header("Content-Type", "text/event-stream")
 	} else {
@@ -380,8 +468,10 @@ func Handler(c *gin.Context, response *http.Response, secret *tokens.Secret, pro
 	var finish_reason string
 	var previous_text typings.StringStruct
 	var original_response chatgpt_types.ChatGPTResponse
+	var moderation_response chatgpt_types.ModerationResponse
 	var isRole = true
 	var imgSource []string
+	var isEnd = false
 	var convId string
 	var msgId string
 
@@ -402,6 +492,15 @@ func Handler(c *gin.Context, response *http.Response, secret *tokens.Secret, pro
 		line = line[6:]
 		// Check if line starts with [DONE]
 		if !strings.HasPrefix(line, "[DONE]") {
+			//moderation error
+			_ = json.Unmarshal([]byte(line), &moderation_response)
+			if moderation_response.Type == "moderation" && moderation_response.ModerationResponse.Blocked {
+				log.Printf("Error in moderation")
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Error in moderation. The model produced invalid content. Consider modifying your prompt if you are seeing this error persistently.",
+				})
+				return "", nil
+			}
 			// Parse the line as JSON
 			original_response.Message.ID = ""
 			err = json.Unmarshal([]byte(line), &original_response)
@@ -493,14 +592,24 @@ func Handler(c *gin.Context, response *http.Response, secret *tokens.Secret, pro
 			if isRole && response_string != "" {
 				isRole = false
 			}
-			if stream && response_string != "" {
-				_, err = c.Writer.WriteString(response_string)
-				if err != nil {
-					return "", nil
+
+			if original_request.Stream {
+				var isStop = false
+				if !isRole {
+					_, isStop = util.GetStopIndex(response_string, original_request.Stop)
+				}
+				if !isStop {
+					_, err = c.Writer.WriteString(response_string)
+					if err != nil {
+						return "", nil
+					}
+					// Flush the response writer buffer to ensure that the client receives each line as it's written
+					c.Writer.Flush()
+				} else {
+					isEnd = true
 				}
 			}
-			// Flush the response writer buffer to ensure that the client receives each line as it's written
-			c.Writer.Flush()
+			isRole = false
 
 			if original_response.Message.Metadata.FinishDetails != nil {
 				if original_response.Message.Metadata.FinishDetails.Type == "max_tokens" {
@@ -508,8 +617,15 @@ func Handler(c *gin.Context, response *http.Response, secret *tokens.Secret, pro
 				}
 				finish_reason = original_response.Message.Metadata.FinishDetails.Type
 			}
+			if isEnd {
+				if original_request.Stream {
+					final_line := official_types.StopChunk(finish_reason)
+					c.Writer.WriteString("data: " + final_line.String() + "\n\n")
+				}
+				break
+			}
 		} else {
-			if stream {
+			if original_request.Stream {
 				final_line := official_types.StopChunk(finish_reason)
 				c.Writer.WriteString("data: " + final_line.String() + "\n\n")
 			}

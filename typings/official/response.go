@@ -1,6 +1,9 @@
 package official
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"freechatgpt/util"
+)
 
 type ChatCompletionChunk struct {
 	ID      string    `json:"id"`
@@ -73,7 +76,8 @@ type Msg struct {
 }
 type Choice struct {
 	Index        int         `json:"index"`
-	Message      Msg         `json:"message"`
+	Message      *Msg        `json:"message,omitempty"`
+	Text         *string     `json:"text,omitempty"`
 	FinishReason interface{} `json:"finish_reason"`
 }
 type usage struct {
@@ -82,12 +86,35 @@ type usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-func NewChatCompletion(full_test string) ChatCompletion {
+func NewChatCompletion(full_test string, prompt bool, stop any) ChatCompletion {
+	full_test, _ = util.GetStopIndex(full_test, stop)
+	if prompt {
+		res := ChatCompletion{
+			ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
+			Object:  "text_completion",
+			Created: int64(0),
+			Model:   "gpt-3.5-turbo-0125",
+			Usage: usage{
+				PromptTokens:     0,
+				CompletionTokens: 0,
+				TotalTokens:      0,
+			},
+			Choices: []Choice{
+				{
+					Text:         &full_test,
+					Message:      nil,
+					Index:        0,
+					FinishReason: "stop",
+				},
+			},
+		}
+		return res
+	}
 	return ChatCompletion{
 		ID:      "chatcmpl-QXlha2FBbmROaXhpZUFyZUF3ZXNvbWUK",
 		Object:  "chat.completion",
 		Created: int64(0),
-		Model:   "gpt-3.5-turbo-0301",
+		Model:   "gpt-3.5-turbo-0125",
 		Usage: usage{
 			PromptTokens:     0,
 			CompletionTokens: 0,
@@ -95,11 +122,13 @@ func NewChatCompletion(full_test string) ChatCompletion {
 		},
 		Choices: []Choice{
 			{
-				Message: Msg{
+				Message: &Msg{
 					Content: full_test,
 					Role:    "assistant",
 				},
-				Index: 0,
+				Text:         nil,
+				Index:        0,
+				FinishReason: "stop",
 			},
 		},
 	}

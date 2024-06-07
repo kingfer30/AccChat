@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"freechatgpt/internal/proxys"
 	"freechatgpt/internal/tokens"
 
 	"github.com/xqdoo00o/OpenAIAuth/auth"
@@ -220,14 +221,8 @@ func updateSingleToken(email string, password string, token_list map[string]toke
 		time.Sleep(5 * time.Second)
 	}
 	println("Updating access token for " + email)
-	var proxy_url string
-	if len(proxies) == 0 {
-		proxy_url = ""
-	} else {
-		proxy_url = proxies[0]
-		// Push used proxy to the back of the list
-		proxies = append(proxies[1:], proxies[0])
-	}
+	var proxy_url = proxys.GetProxyIP()
+
 	authenticator := auth.NewAuthenticator(email, password, proxy_url)
 	err := authenticator.RenewWithCookies()
 	if err != nil {

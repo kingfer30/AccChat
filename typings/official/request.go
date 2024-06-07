@@ -1,14 +1,16 @@
 package official
 
 type APIRequest struct {
-	Messages []api_message `json:"messages"`
-	Stream   bool          `json:"stream"`
-	Model    string        `json:"model"`
+	Messages []APIMessage `json:"messages,omitempty"`
+	Prompt   any          `json:"prompt,omitempty"`
+	Stream   bool         `json:"stream"`
+	Model    string       `json:"model"`
+	Stop     any          `json:"stop,omitempty"`
 }
 
-type api_message struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+type APIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type TTSAPIRequest struct {

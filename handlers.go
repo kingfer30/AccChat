@@ -1,12 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	chatgpt_request_converter "freechatgpt/conversion/requests/chatgpt"
 	chatgpt "freechatgpt/internal/chatgpt"
+	"freechatgpt/internal/proxys"
 	"freechatgpt/internal/tokens"
 	official_types "freechatgpt/typings/official"
+	"io"
+	"log"
 	"os"
+	"strings"
 
+	http "github.com/bogdanfinn/fhttp"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	arkose "github.com/xqdoo00o/funcaptcha"
@@ -83,7 +89,7 @@ func nightmare(c *gin.Context) {
 	var original_request official_types.APIRequest
 	err := c.BindJSON(&original_request)
 	if err != nil {
-		c.JSON(400, gin.H{"error": gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
 			"message": "Request must be proper JSON",
 			"type":    "invalid_request_error",
 			"param":   nil,
@@ -91,16 +97,67 @@ func nightmare(c *gin.Context) {
 		}})
 		return
 	}
+	var isPrompt = false
+	if strings.HasPrefix(c.Request.URL.Path, "/v1/chat/completions") {
+		if original_request.Messages == nil || len(original_request.Messages) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"message": "field messages is required",
+				"type":    "invalid_request_error",
+				"param":   nil,
+				"code":    "required_field_missing",
+			}})
+			return
+		}
+		isPrompt = false
+	} else if strings.HasPrefix(c.Request.URL.Path, "/v1/completions") {
+		if original_request.Prompt == nil || original_request.Prompt == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"message": "field prompt is required",
+				"type":    "invalid_request_error",
+				"param":   nil,
+				"code":    "required_field_missing",
+			}})
+			return
+		}
+		var strArr []string
+		if str, ok := original_request.Prompt.(string); !ok {
+			if ints, ok := original_request.Prompt.([]interface{}); !ok {
+				if strs, ok := original_request.Prompt.([]string); ok {
+					strArr = append(strArr, strs...)
+				}
+			} else {
+				for _, item := range ints {
+					if str, ok := item.(string); ok {
+						strArr = append(strArr, str)
+					}
+				}
+			}
+		} else {
+			strArr = append(strArr, str)
+		}
+		if len(strArr) <= 0 {
+			log.Printf("original_request.Prompt.(string|interface|strings)-Error: %v", original_request.Prompt)
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"message": "field prompt is a wrong type",
+				"type":    "invalid_request_error",
+				"param":   nil,
+				"code":    "required_field_error",
+			}})
+			return
+		}
+		for _, item := range strArr {
+			newMsg := official_types.APIMessage{
+				Role:    "user",
+				Content: item,
+			}
+			original_request.Messages = append(original_request.Messages, newMsg)
+		}
+		isPrompt = true
+	}
 
 	account, secret := getSecret()
-	var proxy_url string
-	if len(proxies) == 0 {
-		proxy_url = ""
-	} else {
-		proxy_url = proxies[0]
-		// Push used proxy to the back of the list
-		proxies = append(proxies[1:], proxies[0])
-	}
+	var proxy_url = proxys.GetProxyIP()
+
 	uid := uuid.NewString()
 	var deviceId string
 	if account == "" {
@@ -112,12 +169,12 @@ func nightmare(c *gin.Context) {
 	}
 	chat_require := chatgpt.CheckRequire(&secret, deviceId, proxy_url)
 	if chat_require == nil {
-		c.JSON(500, gin.H{"error": "unable to check chat requirement"})
+		c.JSON(500, gin.H{"error": "Oops!! Failed to create completion as the model generated invalid Unicode output. Unfortunately, this can happen in rare situations. Consider reviewing your prompt or reducing the temperature of your request. You can retry your request, or contact us through our help center at	help.openai.com if the error persists."})
 		return
 	}
 	var proofToken string
 	if chat_require.Proof.Required {
-		proofToken = chatgpt.CalcProofToken(chat_require, proxy_url)
+		proofToken = chatgpt.CalcProofToken("gAAAAAB", chat_require.Proof.Seed, chat_require.Proof.Difficulty)
 	}
 	var arkoseToken string
 	if chat_require.Arkose.Required {
@@ -129,22 +186,73 @@ func nightmare(c *gin.Context) {
 	// Convert the chat request to a ChatGPT request
 	translated_request := chatgpt_request_converter.ConvertAPIRequest(original_request, account, &secret, deviceId, proxy_url)
 
-	response, err := chatgpt.POSTconversation(translated_request, &secret, deviceId, chat_require.Token, arkoseToken, proofToken, proxy_url)
-	if err != nil {
+	retryNeeded := true
+	retryCount := 1
+	var response *http.Response
+	var resErr error
+	var bodyBytes []byte
+
+	for retryNeeded && retryCount < chatgpt.RetryTimes {
+		response, resErr = chatgpt.POSTconversation(translated_request, &secret, deviceId, chat_require.Token, arkoseToken, proofToken, proxy_url)
+		if resErr != nil && !chatgpt.IsRetryError(resErr.Error()) {
+			log.Printf("POSTconversation-Error: %s", resErr)
+			break
+		}
+		if response != nil && (response.StatusCode == http.StatusRequestEntityTooLarge ||
+			response.StatusCode == http.StatusUnauthorized ||
+			response.StatusCode == http.StatusInternalServerError ||
+			response.StatusCode == http.StatusGatewayTimeout ||
+			response.StatusCode == 524 ||
+			response.StatusCode == http.StatusServiceUnavailable ||
+			response.StatusCode == http.StatusForbidden) {
+
+			bodyBytes, _ = io.ReadAll(response.Body)
+			var error_response map[string]interface{}
+			err := json.Unmarshal(bodyBytes, &error_response)
+			if err == nil && error_response["detail"] != "" && response.StatusCode == http.StatusInternalServerError {
+				//500错误, 且存在错误, 无需重试, 直接返回错误
+				log.Printf("conversation异常: %s, %s", response.Status, error_response["detail"])
+				break
+			}
+			//413问题处理
+			if response != nil && response.StatusCode == http.StatusRequestEntityTooLarge {
+				if len(original_request.Messages) <= 2 {
+					//上下文已经小于2, 不需要切了, 直接更改状态为413,准备发起重试
+					response.StatusCode = http.StatusRequestEntityTooLarge
+					resErr = nil
+					break
+				}
+				if len(original_request.Messages) > 20 {
+					//减少内部循环
+					original_request.Messages = original_request.Messages[:20]
+				}
+				if len(original_request.Messages) > 2 {
+					original_request.Messages = original_request.Messages[2:]
+				}
+			}
+			retryCount++
+			//回收当次资源
+			response.Body.Close()
+		} else {
+			retryNeeded = false
+		}
+	}
+	if resErr != nil {
 		c.JSON(500, gin.H{
-			"error": "error sending request",
+			"error": "Oops!! Failed to create completion as the model generated invalid Unicode output. Unfortunately, this can happen in rare situations. Consider reviewing your prompt or reducing the temperature of your request. You can retry your request, or contact us through our help center at	help.openai.com if the error persists.",
 		})
 		return
 	}
+
 	defer response.Body.Close()
-	if chatgpt.Handle_request_error(c, response) {
+	if chatgpt.Handle_request_error(c, response, bodyBytes) {
 		return
 	}
 	var full_response string
 	for i := 3; i > 0; i-- {
 		var continue_info *chatgpt.ContinueInfo
 		var response_part string
-		response_part, continue_info = chatgpt.Handler(c, response, &secret, proxy_url, deviceId, uid, original_request.Stream)
+		response_part, continue_info = chatgpt.Handler(c, response, &secret, proxy_url, deviceId, uid, original_request)
 		full_response += response_part
 		if continue_info == nil {
 			break
@@ -156,7 +264,7 @@ func nightmare(c *gin.Context) {
 		translated_request.ParentMessageID = continue_info.ParentID
 		chat_require = chatgpt.CheckRequire(&secret, deviceId, proxy_url)
 		if chat_require.Proof.Required {
-			proofToken = chatgpt.CalcProofToken(chat_require, proxy_url)
+			proofToken = chatgpt.CalcProofToken("gAAAAAB", chat_require.Proof.Seed, chat_require.Proof.Difficulty)
 		}
 		if chat_require.Arkose.Required {
 			arkoseToken, err = arkose.GetOpenAIToken(4, secret.PUID, chat_require.Arkose.DX, proxy_url)
@@ -171,8 +279,9 @@ func nightmare(c *gin.Context) {
 			})
 			return
 		}
+		bodyBytes, _ = io.ReadAll(response.Body)
 		defer response.Body.Close()
-		if chatgpt.Handle_request_error(c, response) {
+		if chatgpt.Handle_request_error(c, response, bodyBytes) {
 			return
 		}
 	}
@@ -180,7 +289,7 @@ func nightmare(c *gin.Context) {
 		return
 	}
 	if !original_request.Stream {
-		c.JSON(200, official_types.NewChatCompletion(full_response))
+		c.JSON(200, official_types.NewChatCompletion(full_response, isPrompt, original_request.Stop))
 	} else {
 		c.String(200, "data: [DONE]\n\n")
 	}
@@ -228,14 +337,7 @@ func tts(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "Plus user only"})
 		return
 	}
-	var proxy_url string
-	if len(proxies) == 0 {
-		proxy_url = ""
-	} else {
-		proxy_url = proxies[0]
-		// Push used proxy to the back of the list
-		proxies = append(proxies[1:], proxies[0])
-	}
+	proxy_url := proxys.GetProxyIP()
 	var deviceId = generateUUID(account)
 	chatgpt.SetOAICookie(deviceId)
 	chat_require := chatgpt.CheckRequire(&secret, deviceId, proxy_url)
@@ -245,7 +347,7 @@ func tts(c *gin.Context) {
 	}
 	var proofToken string
 	if chat_require.Proof.Required {
-		proofToken = chatgpt.CalcProofToken(chat_require, proxy_url)
+		proofToken = chatgpt.CalcProofToken("gAAAAAB", chat_require.Proof.Seed, chat_require.Proof.Difficulty)
 	}
 	var arkoseToken string
 	if chat_require.Arkose.Required {
@@ -263,7 +365,9 @@ func tts(c *gin.Context) {
 		return
 	}
 	defer response.Body.Close()
-	if chatgpt.Handle_request_error(c, response) {
+
+	bodyBytes, _ := io.ReadAll(response.Body)
+	if chatgpt.Handle_request_error(c, response, bodyBytes) {
 		return
 	}
 	msgId, convId := chatgpt.HandlerTTS(response, original_request.Input)

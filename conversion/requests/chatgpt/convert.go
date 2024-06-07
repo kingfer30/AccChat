@@ -30,6 +30,9 @@ func ConvertAPIRequest(api_request official_types.APIRequest, account string, se
 		if api_message.Role == "system" {
 			api_message.Role = "critic"
 		}
+		if api_message.Role == "function" {
+			api_message.Role = "user"
+		}
 		chatgpt_request.AddMessage(api_message.Role, api_message.Content, ifMultimodel, account, secret, deviceId, proxy)
 	}
 	return chatgpt_request

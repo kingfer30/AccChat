@@ -10,6 +10,16 @@ type ChatGPTWSSResponse struct {
 	ConversationId string `json:"conversation_id,omitempty"`
 	ResponseId     string `json:"response_id,omitempty"`
 }
+type ModerationResponse struct {
+	Type               string     `json:"type"`
+	ConversationID     string     `json:"conversation_id"`
+	ModerationResponse Moderation `json:"moderation_response"`
+}
+type Moderation struct {
+	Flagged      bool   `json:"flagged"`
+	Blocked      bool   `json:"blocked"`
+	ModerationId string `json:"moderation_id"`
+}
 
 type WSSMsgResponse struct {
 	SequenceId int                `json:"sequenceId"`
